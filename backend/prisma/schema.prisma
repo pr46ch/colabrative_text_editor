@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  username     String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  meetings     Meeting[] @relation("MeetingHost")
+}
+
+model Meeting {
+  id          String               @id @default(uuid()) @db.Uuid
+  title       String
+  hostUserId  String               @db.Uuid
+  currentText String               @default("")
+  version     Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  host        User                 @relation("MeetingHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  operations  OperationLog[]
+  participants MeetingParticipant[]
+
+  @@index([hostUserId])
+}
+
+model MeetingParticipant {
+  id        String   @id @default(uuid()) @db.Uuid
+  meetingId String   @db.Uuid
+  username  String
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, username])
+  @@index([username])
+}
+
+model OperationLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  meetingId String   @db.Uuid
+  version   Int
+  clientId  String
+  op        Json
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, version])
+  @@index([meetingId, version])
+}
