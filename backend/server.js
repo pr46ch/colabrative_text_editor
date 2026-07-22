@@ -10,11 +10,13 @@ import { MeetingPresence } from "./realtime/presence.js";
 import { attachWebSocketServer } from "./realtime/websocket.js";
 import { createAuthRouter } from "./routes/authRoutes.js";
 import { createMeetingRouter } from "./routes/meetingRoutes.js";
+import { redis_helper } from "./redis_stuff/rd.js";
 
 const app = express();
 const server = http.createServer(app);
 const documentStore = new DocumentSessionStore();
 const presence = new MeetingPresence();
+const redis_client=new redis_helper();
 
 app.use(
   cors({
@@ -42,7 +44,8 @@ app.use(
 
 attachWebSocketServer(server, {
   documentStore,
-  presence
+  presence,
+  redisclient: redis_client
 });
 
 app.use((error, _request, response, _next) => {
@@ -50,6 +53,14 @@ app.use((error, _request, response, _next) => {
   response.status(500).json({ error: "Internal server error." });
 });
 
-server.listen(PORT, () => {
-  console.log(`SyncPad server started on http://localhost:${PORT}`);
+async function start() {
+  await redis_client.connect();
+  server.listen(PORT, () => {
+    console.log(`SyncPad server started on http://localhost:${PORT}`);
+  });
+}
+
+void start().catch((error) => {
+  console.error("[server] failed to connect to Redis:", error);
+  process.exitCode = 1;
 });

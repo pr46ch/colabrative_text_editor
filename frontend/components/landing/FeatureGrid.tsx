@@ -1,4 +1,4 @@
-import { Eye, Link2, MousePointer2, Zap } from "lucide-react";
+import { GitMerge, Link2, MousePointer2, Zap } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 
 const features = [
@@ -13,9 +13,10 @@ const features = [
     description: "See where teammates are working without losing your own flow."
   },
   {
-    icon: Eye,
-    title: "Presence at a glance",
-    description: "Online indicators and participant lists keep collaboration clear."
+    icon: GitMerge,
+    title: "Conflict resolution by operational transformer",
+    description:
+      "When people edit at the same time, SyncPad transforms overlapping operations against each other to resolve conflicts and keep every document copy consistent."
   },
   {
     icon: Link2,

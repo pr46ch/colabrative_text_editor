@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { getUserFromToken } from "../auth.js";
 import { prisma } from "../db.js";
@@ -6,9 +7,10 @@ import { findMeetingForUser, getParticipantPresence } from "../services/meetings
 import { OperationQueue } from "./operationQueue.js";
 import { sendJson } from "./presence.js";
 
-export function attachWebSocketServer(server, { documentStore, presence }) {
+export function attachWebSocketServer(server, { documentStore, presence, redisclient }) {
   const wsServer = new WebSocketServer({ server });
   const operationQueue = new OperationQueue();
+  const pendingSenders = new Map();
 
   wsServer.on("connection", (socket, request) => {
     const pendingMessages = [];
@@ -57,22 +59,30 @@ export function attachWebSocketServer(server, { documentStore, presence }) {
       return;
     }
 
+    const connectionId = randomUUID();
     presence.add(meetingId, user, socket);
     console.log(`[ws] ${user.username} connected to meeting ${meetingId}`);
+    await redisclient.add_user_in_meeting(connectionId, user.username, meetingId);
+    await redisclient.recive_message(meetingId, () => hendleincomingmessage(meetingId));
 
     activateConnection(user, meetingId);
 
     socket.on("close", () => {
       presence.remove(meetingId, user.id, socket);
       console.log(`[ws] ${user.username} disconnected from meeting ${meetingId}`);
-      void broadcastPresence(meetingId);
+      void redisclient
+        .delete_user_from_meeting(connectionId, meetingId, documentStore, operationQueue)
+        .then(() => broadcastPresence(meetingId))
+        .catch((error) => console.error("[redis] presence cleanup failed:", error));
     });
 
     socket.on("error", (error) => {
       console.error(`[ws] connection error for ${user.username}:`, error);
     });
 
-    const session = await documentStore.get(meetingId);
+    const session = await operationQueue.enqueue(meetingId, () =>
+      documentStore.get(meetingId, redisclient)
+    );
 
     sendJson(socket, {
       type: "document",
@@ -106,58 +116,87 @@ export function attachWebSocketServer(server, { documentStore, presence }) {
       console.warn("[ws] ignored malformed operation message:", message);
       return;
     }
+    const clientId = String(message.clientId);
+    const pendingSender = createPendingSender(clientId, sender);
 
-    await operationQueue.enqueue(meetingId, async () => {
-      const meeting = await findMeetingForUser(meetingId, user);
-
-      if (!meeting) {
-        console.warn(`[ws] ignored operation for inaccessible meeting ${meetingId}`);
-        return;
-      }
-
-      let result;
-
-      try {
-        const session = await documentStore.get(meetingId);
-
-        console.log(
-          `[ot] operation from ${user.username} on meeting ${meetingId} at base ${message.baseVersion}`
-        );
-
-        result = session.handleOperation({
+    try {
+      await operationQueue.enqueue(meetingId, async () => {
+        const session = await documentStore.get(meetingId, redisclient);
+        const publishedOperation = session.prepareOperation({
           op: message.op,
           baseVersion: message.baseVersion,
-          clientId: String(message.clientId)
+          clientId
         });
 
-        await documentStore.persistOperation(meetingId, result, String(message.clientId));
+        await redisclient.add_message(meetingId, publishedOperation);
+      });
+    } catch (error) {
+      removePendingSender(clientId, pendingSender);
+      console.warn("[ws] ignored operation:", error.message);
+    }
+  }
+  async function hendleincomingmessage(meetingId) {
+    await operationQueue.enqueue(meetingId, async () => {
+      try {
+        const results = await documentStore.sync(meetingId, redisclient);
+
+        for (const result of results) {
+          const pendingSender = takePendingSender(String(result.clientId));
+
+          presence.broadcast(meetingId, {
+            type: "remoteOperation",
+            op: result.op,
+            version: result.version,
+            clientId: String(result.clientId)
+          }, pendingSender?.sender);
+
+          if (pendingSender) {
+            sendJson(pendingSender.sender, { type: "ack", version: result.version });
+          }
+        }
       } catch (error) {
         documentStore.invalidate(meetingId);
-        console.warn(
-          "[ws] ignored operation that failed validation or persistence:",
-          error.message
-        );
-        return;
+        console.warn("[redis] ignored operation:", error.message);
       }
-
-      sendJson(sender, {
-        type: "ack",
-        version: result.version
-      });
-
-      presence.broadcast(
-        meetingId,
-        {
-          type: "remoteOperation",
-          op: result.op,
-          version: result.version,
-          clientId: String(message.clientId)
-        },
-        sender
-      );
-
-      console.log(`[ot] broadcast version ${result.version} for meeting ${meetingId}`);
     });
+  }
+
+  function createPendingSender(clientId, sender) {
+    const pendingSender = {
+      sender
+    };
+
+    const senders = pendingSenders.get(clientId) ?? [];
+    senders.push(pendingSender);
+    pendingSenders.set(clientId, senders);
+    return pendingSender;
+  }
+
+  function takePendingSender(clientId) {
+    const senders = pendingSenders.get(clientId);
+    const pendingSender = senders?.shift();
+
+    if (senders?.length === 0) {
+      pendingSenders.delete(clientId);
+    }
+
+    return pendingSender;
+  }
+
+  function removePendingSender(clientId, pendingSender) {
+    const senders = pendingSenders.get(clientId);
+
+    if (!senders) {
+      return;
+    }
+
+    const index = senders.indexOf(pendingSender);
+    if (index !== -1) {
+      senders.splice(index, 1);
+    }
+    if (senders.length === 0) {
+      pendingSenders.delete(clientId);
+    }
   }
 
   async function broadcastPresence(meetingId) {
@@ -178,17 +217,14 @@ export function attachWebSocketServer(server, { documentStore, presence }) {
       return;
     }
 
-    const participants = getParticipantPresence(
-      meeting,
-      presence.getOnlineUsernames(meetingId)
-    );
+    const onlineUsernames = await redisclient.findPresence(meetingId);
+    const participants = getParticipantPresence(meeting, onlineUsernames);
 
     presence.broadcast(meetingId, {
       type: "presence",
       participants
     });
 
-    console.log(`[presence] broadcast ${participants.length} participants for meeting ${meetingId}`);
   }
 
   return wsServer;

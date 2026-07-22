@@ -10,6 +10,11 @@ export class DocumentSession {
   }
 
   handleOperation(clientMsg) {
+    const preparedOperation = this.prepareOperation(clientMsg);
+    return this.applyPublishedOperation(preparedOperation);
+  }
+
+  prepareOperation(clientMsg) {
     const { op, baseVersion, clientId } = clientMsg;
 
     if (!clientId || !Number.isInteger(baseVersion)) {
@@ -34,10 +39,39 @@ export class DocumentSession {
       transformedOp = transformOperation(historyEntry, transformedOp, clientId);
     }
 
+    return {
+      op: transformedOp,
+      clientId,
+      transformedAtVersion: this.version
+    };
+  }
+
+  applyPublishedOperation(publishedOperation) {
+    const { op, clientId, transformedAtVersion } = publishedOperation;
+
+    if (!clientId || !Number.isInteger(transformedAtVersion)) {
+      throw new Error("Published operation must include clientId and transformedAtVersion.");
+    }
+
+    if (transformedAtVersion < 0 || transformedAtVersion > this.version) {
+      throw new Error("Published operation has an invalid transformedAtVersion.");
+    }
+
+    if (!isValidOperation(op)) {
+      throw new Error("Malformed operation.");
+    }
+
+    let transformedOp = cloneOperation(op);
+
+    for (const historyEntry of this.operations
+      .filter((entry) => entry.version > transformedAtVersion)
+      .sort((first, second) => first.version - second.version)) {
+      transformedOp = transformOperation(historyEntry, transformedOp, clientId);
+    }
+
     this.text = applyOperation(this.text, transformedOp);
     this.version += 1;
 
-    // TODO: persist operation log and document snapshots to DB.
     this.operations.push({
       op: transformedOp,
       version: this.version,
@@ -48,7 +82,8 @@ export class DocumentSession {
     return {
       op: transformedOp,
       text: this.text,
-      version: this.version
+      version: this.version,
+      clientId
     };
   }
 }

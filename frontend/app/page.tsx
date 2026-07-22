@@ -6,12 +6,12 @@ import { LandingFooter } from "@/components/landing/LandingFooter";
 import { LandingHeader } from "@/components/landing/LandingHeader";
 import { buttonStyles } from "@/components/ui/Button";
 
-const githubUrl = "https://github.com/example/syncpad";
+const githubUrl = "https://github.com/pr46ch/colabrative_text_editor";
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen overflow-hidden">
-      <LandingHeader githubUrl={githubUrl} />
+      <LandingHeader />
 
       <section className="relative px-4 pb-20 pt-14 sm:px-6 lg:px-8 lg:pb-24 lg:pt-20">
         <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr]">
@@ -47,7 +47,7 @@ export default function LandingPage() {
 
       <FeatureGrid />
       <HowItWorks />
-      <LandingFooter githubUrl={githubUrl} />
+      <LandingFooter />
     </main>
   );
 }

@@ -14,7 +14,7 @@ export class DocumentSessionStore {
     this.sessions.delete(meetingId);
   }
 
-  async get(meetingId) {
+  async get(meetingId, redisClient) {
     if (this.sessions.has(meetingId)) {
       return this.sessions.get(meetingId);
     }
@@ -33,55 +33,38 @@ export class DocumentSessionStore {
       throw new Error("Meeting not found.");
     }
 
-    const operations = await prisma.operationLog.findMany({
-      where: {
-        meetingId
-      },
-      orderBy: {
-        version: "asc"
-      }
-    });
-
     const session = new DocumentSession({
       text: meeting.currentText,
-      version: meeting.version,
-      operations: operations.map((entry) => ({
-        op: entry.op,
-        version: entry.version,
-        clientId: entry.clientId,
-        time: entry.createdAt.getTime()
-      }))
+      version: meeting.version
     });
 
     this.sessions.set(meetingId, session);
+    await this.sync(meetingId, redisClient);
     return session;
   }
 
-  async persistOperation(meetingId, result, clientId) {
-    await prisma.$transaction(async (transaction) => {
-      const updated = await transaction.meeting.updateMany({
-        where: {
-          id: meetingId,
-          version: result.version - 1
-        },
-        data: {
-          currentText: result.text,
-          version: result.version
-        }
-      });
+  async sync(meetingId, redisClient) {
+    if (!this.sessions.has(meetingId)) {
+      await this.get(meetingId, redisClient);
+      return [];
+    }
 
-      if (updated.count !== 1) {
-        throw new Error("Document version changed before the operation could be saved.");
+    const session = this.sessions.get(meetingId);
+    const operations = await redisClient.findOperations(meetingId);
+    const unseenOperations = operations.slice(session.operations.length);
+
+    return unseenOperations.map((operation) => session.applyPublishedOperation(operation));
+  }
+
+  async persistOperation(meetingId, text, version) {
+    await prisma.meeting.update({
+      where: {
+        id: meetingId
+      },
+      data: {
+        currentText: text,
+        version
       }
-
-      await transaction.operationLog.create({
-        data: {
-          meetingId,
-          version: result.version,
-          clientId,
-          op: result.op
-        }
-      });
     });
   }
 }

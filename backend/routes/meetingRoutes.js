@@ -12,7 +12,7 @@ import {
 
 export function createMeetingRouter({ documentStore, getOnlineUsernames }) {
   const router = Router();
-
+  //route to create meeting
   router.post(
     "/",
     requireAuth,
@@ -45,7 +45,8 @@ export function createMeetingRouter({ documentStore, getOnlineUsernames }) {
       return response.status(201).json(serializeWithPresence(meeting));
     })
   );
-
+  
+  //route to get all the meetings
   router.get(
     "/",
     requireAuth,
@@ -70,6 +71,7 @@ export function createMeetingRouter({ documentStore, getOnlineUsernames }) {
     })
   );
 
+  //get a meeting
   router.get(
     "/:id",
     requireAuth,

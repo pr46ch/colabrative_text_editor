@@ -32,6 +32,25 @@ test("DocumentSession transforms stale inserts against newer history", () => {
   assert.equal(session.text, "AB");
 });
 
+test("DocumentSession does not mutate until a published operation is applied", () => {
+  const session = new DocumentSession();
+  const publishedOperation = session.prepareOperation({
+    op: { type: "insert", position: 0, value: "A" },
+    baseVersion: 0,
+    clientId: "a"
+  });
+
+  assert.equal(session.text, "");
+  assert.equal(session.version, 0);
+  assert.equal(session.operations.length, 0);
+
+  session.applyPublishedOperation(publishedOperation);
+
+  assert.equal(session.text, "A");
+  assert.equal(session.version, 1);
+  assert.equal(session.operations.length, 1);
+});
+
 test("transformOperation handles delete overlap", () => {
   const transformed = transformOperation(
     {
