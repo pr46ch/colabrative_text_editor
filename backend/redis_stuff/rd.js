@@ -1,10 +1,20 @@
 import { createClient } from "redis";
+import { REDIS_URL } from "../config.js";
 
 export class redis_helper {
   constructor() {
-    this.rediscliend = createClient();
+    this.rediscliend = createClient({ url: REDIS_URL });
     this.subscriber = this.rediscliend.duplicate();
     this.handlers = new Map();
+    this.invalidationHandlers = new Map();
+    this.presenceHandlers = new Map();
+
+    this.rediscliend.on("error", (error) => {
+      console.error("[redis] client error:", error.message);
+    });
+    this.subscriber.on("error", (error) => {
+      console.error("[redis] subscriber error:", error.message);
+    });
   }
 
   async connect() {
@@ -24,6 +34,7 @@ export class redis_helper {
         await documentStore.persistOperation(meetingId, session.text, session.version);
         await this.rediscliend.del(this.operationKey(meetingId));
         documentStore.invalidate(meetingId);
+        await this.rediscliend.publish(this.invalidationChannel(meetingId), "invalidate");
       });
     }
   }
@@ -52,6 +63,36 @@ export class redis_helper {
     });
   }
 
+  async subscribeToInvalidation(meetingId, handler) {
+    if (this.invalidationHandlers.has(meetingId)) {
+      return;
+    }
+
+    this.invalidationHandlers.set(meetingId, handler);
+    await this.subscriber.subscribe(this.invalidationChannel(meetingId), () => {
+      void handler();
+    });
+  }
+
+  async subscribeToPresence(meetingId, handler) {
+    if (this.presenceHandlers.has(meetingId)) {
+      return;
+    }
+
+    this.presenceHandlers.set(meetingId, handler);
+    await this.subscriber.subscribe(this.presenceChannel(meetingId), () => {
+      void handler();
+    });
+  }
+
+  async publishPresenceChanged(meetingId) {
+    await this.rediscliend.publish(this.presenceChannel(meetingId), "changed");
+  }
+
+  async ping() {
+    return this.rediscliend.ping();
+  }
+
   async findPresence(meetingId) {
     return this.rediscliend.hVals(this.presenceKey(meetingId));
   }
@@ -71,5 +112,13 @@ export class redis_helper {
 
   operationChannel(meetingId) {
     return `meeting:${meetingId}:operations:events`;
+  }
+
+  invalidationChannel(meetingId) {
+    return `meeting:${meetingId}:document:invalidate`;
+  }
+
+  presenceChannel(meetingId) {
+    return `meeting:${meetingId}:presence:events`;
   }
 }

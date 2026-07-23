@@ -2,7 +2,7 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import http from "node:http";
-import { getCorsOrigin, PORT } from "./config.js";
+import { getCorsOrigin, PORT, validateProductionConfig } from "./config.js";
 import { prisma } from "./db.js";
 import { asyncHandler } from "./middleware/asyncHandler.js";
 import { DocumentSessionStore } from "./realtime/documentSessionStore.js";
@@ -25,10 +25,15 @@ app.use(
 );
 app.use(express.json({ limit: "1mb" }));
 
+app.get("/health", (_request, response) => {
+  response.json({ ok: true });
+});
+
 app.get(
-  "/health",
+  "/ready",
   asyncHandler(async (_request, response) => {
     await prisma.$queryRaw`SELECT 1`;
+    await redis_client.ping();
     response.json({ ok: true });
   })
 );
@@ -54,6 +59,7 @@ app.use((error, _request, response, _next) => {
 });
 
 async function start() {
+  validateProductionConfig();
   await redis_client.connect();
   server.listen(PORT, () => {
     console.log(`SyncPad server started on http://localhost:${PORT}`);

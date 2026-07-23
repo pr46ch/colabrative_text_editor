@@ -6,6 +6,7 @@ import { isValidOperation } from "../helper.js";
 import { findMeetingForUser, getParticipantPresence } from "../services/meetings.js";
 import { OperationQueue } from "./operationQueue.js";
 import { sendJson } from "./presence.js";
+import { isAllowedOrigin } from "../config.js";
 
 export function attachWebSocketServer(server, { documentStore, presence, redisclient }) {
   const wsServer = new WebSocketServer({ server });
@@ -13,6 +14,11 @@ export function attachWebSocketServer(server, { documentStore, presence, rediscl
   const pendingSenders = new Map();
 
   wsServer.on("connection", (socket, request) => {
+    if (!isAllowedOrigin(request.headers.origin)) {
+      socket.close(1008, "Origin is not allowed.");
+      return;
+    }
+
     const pendingMessages = [];
     let connectionContext = null;
 
@@ -64,6 +70,8 @@ export function attachWebSocketServer(server, { documentStore, presence, rediscl
     console.log(`[ws] ${user.username} connected to meeting ${meetingId}`);
     await redisclient.add_user_in_meeting(connectionId, user.username, meetingId);
     await redisclient.recive_message(meetingId, () => hendleincomingmessage(meetingId));
+    await redisclient.subscribeToInvalidation(meetingId, () => documentStore.invalidate(meetingId));
+    await redisclient.subscribeToPresence(meetingId, () => void broadcastPresence(meetingId));
 
     activateConnection(user, meetingId);
 
@@ -72,7 +80,7 @@ export function attachWebSocketServer(server, { documentStore, presence, rediscl
       console.log(`[ws] ${user.username} disconnected from meeting ${meetingId}`);
       void redisclient
         .delete_user_from_meeting(connectionId, meetingId, documentStore, operationQueue)
-        .then(() => broadcastPresence(meetingId))
+        .then(() => redisclient.publishPresenceChanged(meetingId))
         .catch((error) => console.error("[redis] presence cleanup failed:", error));
     });
 
@@ -90,6 +98,7 @@ export function attachWebSocketServer(server, { documentStore, presence, rediscl
       version: session.version
     });
     await broadcastPresence(meetingId);
+    await redisclient.publishPresenceChanged(meetingId);
   }
 
   async function handleMessage(rawMessage, sender, user, meetingId) {
@@ -99,6 +108,10 @@ export function attachWebSocketServer(server, { documentStore, presence, rediscl
       message = JSON.parse(rawMessage.toString());
     } catch (error) {
       console.warn("[ws] ignored non-JSON message:", error.message);
+      return;
+    }
+
+    if (message.type === "ping") {
       return;
     }
 
