@@ -1,5 +1,6 @@
 name: Publish backend Docker image
 
+# Rebuild the Docker Hub backend image after every push to main.
 on:
   push:
     branches: [main]
