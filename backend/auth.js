@@ -66,7 +66,6 @@ export async function getUserFromToken(token) {
     return null;
   }
 }
-
 export async function requireAuth(request, response, next) {
   const header = request.headers.authorization ?? "";
   const [scheme, token] = header.split(" ");

@@ -3,6 +3,7 @@ import {
   authResponse,
   hashPassword,
   normalizeUsername,
+  requireAuth,
   validatePassword,
   verifyPassword
 } from "../auth.js";
@@ -11,6 +12,13 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 
 export function createAuthRouter() {
   const router = Router();
+
+  router.get("/me", requireAuth, (request, response) => {
+    return response.json({
+      userId: request.user.id,
+      username: request.user.username
+    });
+  });
 
   router.post(
     "/register",
