@@ -15,6 +15,7 @@ type ApiMeeting = {
 };
 
 type SignInResponse = User;
+type CurrentUserResponse = Omit<User, "token">;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -29,7 +30,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const errorPayload = await response.json().catch(() => null);
     throw new Error(errorPayload?.error ?? "SyncPad API request failed.");
   }
-
   return response.json() as Promise<T>;
 }
 
@@ -68,6 +68,12 @@ export async function listMeetingsRequest(userId: string, token: string) {
   );
 
   return payload.meetings.map(toMeeting);
+}
+
+export async function getCurrentUserRequest(token: string) {
+  return request<CurrentUserResponse>("/auth/me", {
+    headers: authHeaders(token)
+  });
 }
 
 export async function createMeetingRequest(input: {

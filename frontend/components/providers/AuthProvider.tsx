@@ -4,14 +4,16 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState
 } from "react";
-import { registerRequest, signInRequest } from "@/lib/api";
+import { getCurrentUserRequest, registerRequest, signInRequest } from "@/lib/api";
 import { User } from "@/types";
 
 type AuthContextValue = {
   user: User | null;
+  isInitializing: boolean;
   register: (username: string, password: string) => Promise<void>;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => void;
@@ -25,29 +27,64 @@ type AuthProviderProps = {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      setIsInitializing(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    getCurrentUserRequest(token)
+      .then((currentUser) => {
+        if (!cancelled) {
+          setUser({ ...currentUser, token });
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("token");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsInitializing(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const register = useCallback(async (username: string, password: string) => {
     const signedInUser = await registerRequest(username, password);
+    localStorage.setItem("token", signedInUser.token);
     setUser(signedInUser);
   }, []);
 
   const signIn = useCallback(async (username: string, password: string) => {
     const signedInUser = await signInRequest(username, password);
+    localStorage.setItem("token", signedInUser.token);
     setUser(signedInUser);
   }, []);
 
   const signOut = useCallback(() => {
+    localStorage.removeItem("token");
     setUser(null);
   }, []);
 
   const value = useMemo(
     () => ({
       user,
+      isInitializing,
       register,
       signIn,
       signOut
     }),
-    [register, signIn, signOut, user]
+    [isInitializing, register, signIn, signOut, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

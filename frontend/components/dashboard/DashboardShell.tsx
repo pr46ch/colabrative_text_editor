@@ -12,16 +12,16 @@ import { MeetingCard } from "@/components/dashboard/MeetingCard";
 
 export function DashboardShell() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, isInitializing, signOut } = useAuth();
   const { meetings } = useMeetings();
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    if (!user) {
+    if (!isInitializing && !user) {
       router.replace("/sign-in");
     }
-  }, [router, user]);
+  }, [isInitializing, router, user]);
 
   const filteredMeetings = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -34,7 +34,7 @@ export function DashboardShell() {
     );
   }, [meetings, query]);
 
-  if (!user) {
+  if (isInitializing || !user) {
     return (
       <main className="grid min-h-screen place-items-center px-4">
         <div className="text-sm font-medium text-slate-600">
