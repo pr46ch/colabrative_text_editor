@@ -169,59 +169,6 @@ Open `http://localhost:3000`.
 
 > On macOS or Linux, replace `copy` with `cp` in the setup commands.
 
-## Testing
-
-Run the current backend test suite:
-
-```bash
-cd backend
-npm test
-```
-
-### Test cases to cover
-
-#### 1. Frontend — Next.js
-
-- Sign up and sign in show the authenticated dashboard.
-- Refreshing the page restores the user from a valid saved JWT.
-- An expired or invalid JWT is removed and redirects to sign-in.
-- A user can create a meeting, receive meeting data, and open the editor.
-- A disconnected WebSocket reconnects without losing the server-confirmed
-  document version.
-
-#### 2. Backend — Express, WebSocket, PostgreSQL
-
-- Registration rejects invalid usernames and short passwords.
-- Sign-in accepts valid credentials and rejects invalid credentials.
-- Protected HTTP and WebSocket endpoints reject missing, malformed, expired,
-  or unauthorized JWTs.
-- A participant cannot read or modify a meeting they were not invited to.
-- PostgreSQL persistence retains the meeting text and version after all users
-  leave and the document session is reloaded.
-- Redis readiness failure makes `/ready` fail rather than report a healthy
-  application.
-
-#### 3. Operational Transform
-
-- Concurrent inserts before, after, and at the same character position.
-- Insert versus delete, including an insertion within a deleted range.
-- Overlapping and adjacent deletes.
-- A stale operation is transformed against multiple accepted operations.
-- The same set of concurrent operations, delivered in different orders to
-  clients, converges on identical text and version.
-- Same-position simultaneous inserts use the client-ID tie-break consistently.
-
-#### 4. Multi-instance and late-join behavior
-
-- Connect users in one meeting to two different backend instances; edits from
-  either instance reach both users and converge.
-- Restart one instance and verify it restores the meeting from PostgreSQL plus
-  the Redis operation log.
-- Connect a late user while edits are in flight; assert the initial document
-  snapshot includes every operation up to the announced version.
-- Disconnect the final user and verify the text/version are persisted and the
-  Redis operation list is cleared.
-- Reconnect after that cleanup and confirm the PostgreSQL snapshot is served.
 
 ## Deployment
 
