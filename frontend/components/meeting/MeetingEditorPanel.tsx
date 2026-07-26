@@ -1,11 +1,12 @@
 "use client";
 
-import { ChangeEvent } from "react";
+import { ChangeEvent, RefObject } from "react";
 
 type MeetingEditorPanelProps = {
   documentText: string;
   documentVersion: number;
   socketStatus: string;
+  editorRef: RefObject<HTMLTextAreaElement>;
   onDocumentChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
 };
 
@@ -13,6 +14,7 @@ export function MeetingEditorPanel({
   documentText,
   documentVersion,
   socketStatus,
+  editorRef,
   onDocumentChange
 }: MeetingEditorPanelProps) {
   const statusColor =
@@ -31,6 +33,7 @@ export function MeetingEditorPanel({
           </div>
         </div>
         <textarea
+          ref={editorRef}
           className="min-h-[460px] flex-1 resize-none border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-950 outline-none placeholder:text-slate-400"
           value={documentText}
           onChange={onDocumentChange}

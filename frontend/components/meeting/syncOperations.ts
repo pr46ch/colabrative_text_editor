@@ -76,6 +76,29 @@ export function applyOperation(text: string, operation: SyncOperation) {
   return `${text.slice(0, position)}${text.slice(position + deleteCount)}`;
 }
 
+export function transformCursorPosition(
+  cursorPosition: number,
+  operation: SyncOperation
+) {
+  if (operation.type === "insert") {
+    return operation.position < cursorPosition
+      ? cursorPosition + operation.value.length
+      : cursorPosition;
+  }
+
+  const deleteEnd = operation.position + operation.dell;
+
+  if (cursorPosition <= operation.position) {
+    return cursorPosition;
+  }
+
+  if (cursorPosition >= deleteEnd) {
+    return cursorPosition - operation.dell;
+  }
+
+  return operation.position;
+}
+
 export function isSyncOperation(value: unknown): value is SyncOperation {
   if (!value || typeof value !== "object") {
     return false;

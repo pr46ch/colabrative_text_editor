@@ -107,6 +107,7 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
           documentText={documentState.documentText}
           documentVersion={documentState.documentVersion}
           socketStatus={documentState.socketStatus}
+          editorRef={documentState.editorRef}
           onDocumentChange={documentState.handleEditorChange}
         />
         <ParticipantsSidebar participants={meeting.participants} />

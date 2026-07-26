@@ -1,6 +1,13 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from "react";
 import { WS_BASE_URL } from "@/lib/api";
 import { Meeting, Participant, User } from "@/types";
 import {
@@ -9,7 +16,8 @@ import {
   createClientId,
   isSyncOperation,
   parseSocketMessage,
-  SyncOperation
+  SyncOperation,
+  transformCursorPosition
 } from "@/components/meeting/syncOperations";
 
 type UseCollaborativeDocumentArgs = {
@@ -32,6 +40,13 @@ export function useCollaborativeDocument({
   const wsRef = useRef<WebSocket | null>(null);
   const versionRef = useRef(0);
   const clientIdRef = useRef(createClientId());
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const documentTextRef = useRef("");
+  const pendingSelectionRef = useRef<{
+    start: number;
+    end: number;
+    direction: "forward" | "backward" | "none";
+  } | null>(null);
 
   const updateVersion = useCallback((nextVersion: number) => {
     versionRef.current = Math.max(versionRef.current, nextVersion);
@@ -51,6 +66,7 @@ export function useCollaborativeDocument({
     }
 
     setDocumentText(meeting.text ?? "");
+    documentTextRef.current = meeting.text ?? "";
     setDocumentVersion(nextVersion);
     versionRef.current = nextVersion;
     seededDocumentKeyRef.current = nextDocumentKey;
@@ -83,6 +99,8 @@ export function useCollaborativeDocument({
       if (message.type === "document" && typeof message.text === "string") {
         const nextVersion = typeof message.version === "number" ? message.version : 0;
 
+        documentTextRef.current = message.text;
+        pendingSelectionRef.current = null;
         setDocumentText(message.text);
         updateVersion(nextVersion);
         return;
@@ -105,9 +123,28 @@ export function useCollaborativeDocument({
         typeof message.version === "number" &&
         isSyncOperation(incomingOperation)
       ) {
-        setDocumentText((currentText) =>
-          applyOperation(currentText, incomingOperation)
-        );
+        const editor = editorRef.current;
+        const currentSelection =
+          pendingSelectionRef.current ??
+          (editor
+            ? {
+                start: editor.selectionStart,
+                end: editor.selectionEnd,
+                direction: editor.selectionDirection
+              }
+            : null);
+
+        if (currentSelection) {
+          pendingSelectionRef.current = {
+            start: transformCursorPosition(currentSelection.start, incomingOperation),
+            end: transformCursorPosition(currentSelection.end, incomingOperation),
+            direction: currentSelection.direction
+          };
+        }
+
+        const nextText = applyOperation(documentTextRef.current, incomingOperation);
+        documentTextRef.current = nextText;
+        setDocumentText(nextText);
         updateVersion(message.version);
       }
     };
@@ -128,6 +165,22 @@ export function useCollaborativeDocument({
       }
     };
   }, [meetingId, onParticipantsChange, updateVersion, user]);
+
+  useLayoutEffect(() => {
+    const pendingSelection = pendingSelectionRef.current;
+    const editor = editorRef.current;
+
+    if (!pendingSelection || !editor) {
+      return;
+    }
+
+    editor.setSelectionRange(
+      pendingSelection.start,
+      pendingSelection.end,
+      pendingSelection.direction
+    );
+    pendingSelectionRef.current = null;
+  }, [documentText]);
 
   const sendOperations = useCallback((operations: SyncOperation[]) => {
     const socket = wsRef.current;
@@ -157,21 +210,24 @@ export function useCollaborativeDocument({
   const handleEditorChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
       const nextText = event.target.value;
-      const operations = buildOperations(documentText, nextText);
+      const operations = buildOperations(documentTextRef.current, nextText);
 
+      documentTextRef.current = nextText;
+      pendingSelectionRef.current = null;
       setDocumentText(nextText);
 
       if (operations.length > 0) {
         sendOperations(operations);
       }
     },
-    [documentText, sendOperations]
+    [sendOperations]
   );
 
   return {
     documentText,
     documentVersion,
     socketStatus,
+    editorRef,
     handleEditorChange
   };
 }
