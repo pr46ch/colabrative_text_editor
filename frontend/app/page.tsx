@@ -13,8 +13,8 @@ export default function LandingPage() {
     <main className="min-h-screen overflow-hidden">
       <LandingHeader />
 
-      <section className="relative px-4 pb-20 pt-14 sm:px-6 lg:px-8 lg:pb-24 lg:pt-20">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr]">
+      <section className="relative flex min-h-screen items-center px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr]">
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-md border border-indigo-100 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 shadow-sm">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />

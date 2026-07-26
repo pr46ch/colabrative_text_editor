@@ -38,7 +38,9 @@ export function DashboardShell() {
     return (
       <main className="grid min-h-screen place-items-center px-4">
         <div className="text-sm font-medium text-slate-600">
-          Redirecting to sign in...
+          {isInitializing
+            ? "Restoring your session..."
+            : "Redirecting to sign in..."}
         </div>
       </main>
     );

@@ -11,6 +11,8 @@ import {
 import { getCurrentUserRequest, registerRequest, signInRequest } from "@/lib/api";
 import { User } from "@/types";
 
+const AUTH_TOKEN_STORAGE_KEY = "token";
+
 type AuthContextValue = {
   user: User | null;
   isInitializing: boolean;
@@ -30,7 +32,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 
     if (!token) {
       setIsInitializing(false);
@@ -41,12 +43,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     getCurrentUserRequest(token)
       .then((currentUser) => {
-        if (!cancelled) {
+        const tokenIsCurrent =
+          localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) === token;
+
+        if (!cancelled && tokenIsCurrent) {
           setUser({ ...currentUser, token });
         }
       })
       .catch(() => {
-        localStorage.removeItem("token");
+        if (localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) === token) {
+          localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -61,18 +68,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const register = useCallback(async (username: string, password: string) => {
     const signedInUser = await registerRequest(username, password);
-    localStorage.setItem("token", signedInUser.token);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, signedInUser.token);
     setUser(signedInUser);
+    setIsInitializing(false);
   }, []);
 
   const signIn = useCallback(async (username: string, password: string) => {
     const signedInUser = await signInRequest(username, password);
-    localStorage.setItem("token", signedInUser.token);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, signedInUser.token);
     setUser(signedInUser);
+    setIsInitializing(false);
   }, []);
 
   const signOut = useCallback(() => {
-    localStorage.removeItem("token");
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     setUser(null);
   }, []);
 

@@ -1,12 +1,13 @@
-import { Copy, MousePointer2, Users } from "lucide-react";
+import { Copy, Users } from "lucide-react";
+import { TeacherTypingText } from "@/components/landing/TeacherTypingText";
 
 type EditorMockupProps = {
   compact?: boolean;
 };
 
 const participants = [
-  { name: "Maya", color: "bg-indigo-500" },
-  { name: "Jules", color: "bg-emerald-500" },
+  { name: "Teacher", color: "bg-indigo-500" },
+  { name: "Student", color: "bg-emerald-500" },
   { name: "Nia", color: "bg-fuchsia-500" }
 ];
 
@@ -39,28 +40,27 @@ export function EditorMockup({ compact = false }: EditorMockupProps) {
         </div>
 
         <div className="grid gap-3 p-3 lg:grid-cols-[1fr_11rem]">
-          <div className="relative min-h-[310px] rounded-md border border-slate-200 bg-white p-5">
-            <p className="text-sm font-semibold leading-7 text-slate-800">
-              Project goals for the next release
+          <div className="min-h-[310px] rounded-md border border-slate-200 bg-white p-5 text-black">
+            <p className="text-sm font-semibold leading-7 text-black">
+              Product planning notes
             </p>
-            <p className="mt-4 text-sm leading-7 text-slate-600">
+            <p className="mt-4 text-sm leading-7 text-black">
               Keep the editing flow simple, make collaboration obvious, and
               agree on the work before Friday.
             </p>
-            <p className="mt-4 text-sm leading-7 text-slate-600">
-              <span className="rounded bg-indigo-100 px-1 text-indigo-800">
-                Maya:
-              </span>{" "}
-              I will prepare the onboarding draft and share it with the team.
+            <p className="mt-4 text-sm leading-7 text-black">
+              <span className="font-medium">Teacher:</span>{" "}
+              <TeacherTypingText />
             </p>
-            <div className="absolute left-4 top-28 flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white shadow-lg">
-              <MousePointer2 className="h-3 w-3" aria-hidden="true" />
-              Maya
-            </div>
-            <div className="absolute bottom-5 right-5 flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white shadow-lg">
-              <MousePointer2 className="h-3 w-3" aria-hidden="true" />
-              Jules
-            </div>
+            <p className="mt-4 text-sm leading-7 text-black">
+              <span className="font-medium">Student:</span>{" "}
+              The server transforms concurrent edits so every collaborator sees
+              the same document.
+              <span
+                className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-emerald-500 align-[-2px]"
+                aria-hidden="true"
+              />
+            </p>
           </div>
 
           <aside className="rounded-md border border-slate-200 bg-white p-3">
