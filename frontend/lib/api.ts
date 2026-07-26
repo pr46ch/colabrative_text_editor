@@ -17,6 +17,16 @@ type ApiMeeting = {
 type SignInResponse = User;
 type CurrentUserResponse = Omit<User, "token">;
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -28,7 +38,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorPayload = await response.json().catch(() => null);
-    throw new Error(errorPayload?.error ?? "SyncPad API request failed.");
+    throw new ApiError(
+      errorPayload?.error ?? "SyncPad API request failed.",
+      response.status
+    );
   }
   return response.json() as Promise<T>;
 }

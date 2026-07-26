@@ -8,10 +8,68 @@ import {
   useMemo,
   useState
 } from "react";
-import { getCurrentUserRequest, registerRequest, signInRequest } from "@/lib/api";
+import {
+  ApiError,
+  getCurrentUserRequest,
+  registerRequest,
+  signInRequest
+} from "@/lib/api";
 import { User } from "@/types";
 
 const AUTH_TOKEN_STORAGE_KEY = "token";
+const AUTH_USER_STORAGE_KEY = "authUser";
+
+function isTokenExpired(token: string) {
+  try {
+    const payloadSegment = token.split(".")[1];
+
+    if (!payloadSegment) {
+      return true;
+    }
+
+    const normalizedPayload = payloadSegment
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(payloadSegment.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(normalizedPayload));
+
+    return typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function readCachedUser(token: string): User | null {
+  try {
+    const cachedUser = JSON.parse(
+      localStorage.getItem(AUTH_USER_STORAGE_KEY) ?? "null"
+    );
+
+    if (
+      !cachedUser ||
+      cachedUser.token !== token ||
+      typeof cachedUser.userId !== "string" ||
+      typeof cachedUser.username !== "string" ||
+      isTokenExpired(token)
+    ) {
+      return null;
+    }
+
+    return cachedUser as User;
+  } catch {
+    return null;
+  }
+}
+
+function storeAuthSession(user: User) {
+  localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, user.token);
+  localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+}
+
+function clearAuthSession() {
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+}
 
 type AuthContextValue = {
   user: User | null;
@@ -39,6 +97,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return;
     }
 
+    const cachedUser = readCachedUser(token);
+
+    if (cachedUser) {
+      setUser(cachedUser);
+    }
+
     let cancelled = false;
 
     getCurrentUserRequest(token)
@@ -47,12 +111,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
           localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) === token;
 
         if (!cancelled && tokenIsCurrent) {
-          setUser({ ...currentUser, token });
+          const restoredUser = { ...currentUser, token };
+          storeAuthSession(restoredUser);
+          setUser(restoredUser);
         }
       })
-      .catch(() => {
-        if (localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) === token) {
-          localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      .catch((caughtError) => {
+        const tokenIsCurrent =
+          localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) === token;
+
+        if (
+          !cancelled &&
+          tokenIsCurrent &&
+          caughtError instanceof ApiError &&
+          caughtError.status === 401
+        ) {
+          clearAuthSession();
+          setUser(null);
         }
       })
       .finally(() => {
@@ -68,20 +143,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const register = useCallback(async (username: string, password: string) => {
     const signedInUser = await registerRequest(username, password);
-    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, signedInUser.token);
+    storeAuthSession(signedInUser);
     setUser(signedInUser);
     setIsInitializing(false);
   }, []);
 
   const signIn = useCallback(async (username: string, password: string) => {
     const signedInUser = await signInRequest(username, password);
-    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, signedInUser.token);
+    storeAuthSession(signedInUser);
     setUser(signedInUser);
     setIsInitializing(false);
   }, []);
 
   const signOut = useCallback(() => {
-    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    clearAuthSession();
     setUser(null);
   }, []);
 
