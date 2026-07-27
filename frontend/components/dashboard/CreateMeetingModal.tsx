@@ -38,8 +38,7 @@ export function CreateMeetingModal({ open, onClose }: CreateMeetingModalProps) {
     setError("");
     const meeting = await createMeeting({
       title: nextTitle,
-      invitedUsernames: invites,
-      ownerUsername: user.username
+      invitedUsernames: invites
     });
 
     setTitle("");

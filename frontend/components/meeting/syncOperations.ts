@@ -12,7 +12,65 @@ type SocketMessage = {
   op?: unknown;
 };
 
-export function buildOperations(previousText: string, nextText: string) {
+export function buildOperations(
+  previousText: string,
+  nextText: string,
+  beforeInput?: readonly [string, number, number] | null
+) {
+  if (beforeInput) {
+    const [inputType, selectionStart, selectionEnd] = beforeInput;
+    const selectedCount = selectionEnd - selectionStart;
+    const lengthChange = nextText.length - previousText.length;
+
+    if (inputType.startsWith("delete")) {
+      const deletedCount = -lengthChange;
+      const position =
+        selectedCount > 0 || !inputType.endsWith("Backward")
+          ? selectionStart
+          : selectionStart - deletedCount;
+
+      if (
+        deletedCount >= 0 &&
+        position >= 0 &&
+        (selectedCount === 0 || deletedCount === selectedCount)
+      ) {
+        return deletedCount > 0
+          ? [{ type: "delete" as const, position, dell: deletedCount }]
+          : [];
+      }
+    }
+
+    if (
+      inputType.startsWith("insert") &&
+      inputType !== "insertReplacementText" &&
+      inputType !== "insertTranspose"
+    ) {
+      const insertedCount = lengthChange + selectedCount;
+
+      if (insertedCount >= 0) {
+        const operations: SyncOperation[] = [];
+
+        if (selectedCount > 0) {
+          operations.push({
+            type: "delete",
+            position: selectionStart,
+            dell: selectedCount
+          });
+        }
+
+        if (insertedCount > 0) {
+          operations.push({
+            type: "insert",
+            position: selectionStart,
+            value: nextText.slice(selectionStart, selectionStart + insertedCount)
+          });
+        }
+
+        return operations;
+      }
+    }
+  }
+
   if (previousText === nextText) {
     return [];
   }
@@ -61,7 +119,6 @@ export function buildOperations(previousText: string, nextText: string) {
 
   return operations;
 }
-
 export function applyOperation(text: string, operation: SyncOperation) {
   const position = Math.max(0, Math.min(operation.position, text.length));
 

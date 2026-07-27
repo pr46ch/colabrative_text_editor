@@ -22,5 +22,4 @@ export type Meeting = {
 export type CreateMeetingInput = {
   title: string;
   invitedUsernames: string[];
-  ownerUsername: string;
 };
