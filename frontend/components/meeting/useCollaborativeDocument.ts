@@ -15,10 +15,12 @@ import {
   applyOperation,
   buildOperations,
   createClientId,
+  type EditorInput,
   isSyncOperation,
   parseSocketMessage,
   SyncOperation,
-  transformCursorPosition
+  transformCursorPosition,
+  transformoperation
 } from "@/components/meeting/syncOperations";
 
 type UseCollaborativeDocumentArgs = {
@@ -37,23 +39,76 @@ export function useCollaborativeDocument({
   const [documentText, setDocumentText] = useState("");
   const [documentVersion, setDocumentVersion] = useState(0);
   const [socketStatus, setSocketStatus] = useState("Disconnected");
-  const seededDocumentKeyRef = useRef<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const versionRef = useRef(0);
   const clientIdRef = useRef(createClientId());
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const documentTextRef = useRef("");
-  const beforeInputRef = useRef<readonly [string, number, number] | null>(null);
+  const editRef = useRef<EditorInput | null>(null);
   const pendingSelectionRef = useRef<{
     start: number;
     end: number;
     direction: "forward" | "backward" | "none";
   } | null>(null);
+  const pendingOperationsRef = useRef<SyncOperation[]>([]);
+  const waitingForAckRef = useRef(false);
+  const allocatedVersionRef = useRef<number | null>(null);
 
   const updateVersion = useCallback((nextVersion: number) => {
     versionRef.current = Math.max(versionRef.current, nextVersion);
     setDocumentVersion(versionRef.current);
   }, []);
+
+  const sendNextOperation = useCallback(() => {
+    if (waitingForAckRef.current) {
+      return;
+    }
+
+    while (
+      pendingOperationsRef.current[0]?.type === "delete" &&
+      pendingOperationsRef.current[0].dell === 0
+    ) {
+      pendingOperationsRef.current.shift();
+    }
+
+    const socket = wsRef.current;
+    const operation = pendingOperationsRef.current[0];
+
+    if (
+      !operation ||
+      !socket ||
+      socket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "operation",
+        op: operation,
+        baseVersion: versionRef.current,
+        clientId: clientIdRef.current
+      })
+    );
+    waitingForAckRef.current = true;
+  }, []);
+
+  const finishAcknowledgedOperation = useCallback(() => {
+    const allocatedVersion = allocatedVersionRef.current;
+
+    if (
+      allocatedVersion === null ||
+      versionRef.current !== allocatedVersion - 1
+    ) {
+      return;
+    }
+
+    pendingOperationsRef.current.shift();
+    waitingForAckRef.current = false;
+    allocatedVersionRef.current = null;
+    updateVersion(allocatedVersion);
+    sendNextOperation();
+  }, [sendNextOperation, updateVersion]);
 
   useEffect(() => {
     if (!meeting) {
@@ -61,18 +116,12 @@ export function useCollaborativeDocument({
     }
 
     const nextVersion = meeting.version ?? 0;
-    const nextDocumentKey = `${meeting.id}:${nextVersion}:${meeting.text ?? ""}`;
-
-    if (seededDocumentKeyRef.current === nextDocumentKey) {
-      return;
-    }
 
     setDocumentText(meeting.text ?? "");
     documentTextRef.current = meeting.text ?? "";
     setDocumentVersion(nextVersion);
     versionRef.current = nextVersion;
-    seededDocumentKeyRef.current = nextDocumentKey;
-  }, [meeting]);
+  }, [meeting?.id, meeting?.text, meeting?.version]);
 
   useEffect(() => {
     if (!user) {
@@ -89,6 +138,7 @@ export function useCollaborativeDocument({
 
     socket.onopen = () => {
       setSocketStatus("Connected");
+      sendNextOperation();
     };
 
     socket.onmessage = (event) => {
@@ -114,7 +164,8 @@ export function useCollaborativeDocument({
       }
 
       if (message.type === "ack" && typeof message.version === "number") {
-        updateVersion(message.version);
+        allocatedVersionRef.current = message.version;
+        finishAcknowledgedOperation();
         return;
       }
 
@@ -125,6 +176,31 @@ export function useCollaborativeDocument({
         typeof message.version === "number" &&
         isSyncOperation(incomingOperation)
       ) {
+        if (message.version <= versionRef.current) {
+          return;
+        }
+
+        const remoteClientId = message.clientId ?? "";
+        let transformedIncoming = incomingOperation;
+
+        pendingOperationsRef.current = pendingOperationsRef.current.map(
+          (localOperation) => {
+            const remoteOperation = transformedIncoming;
+
+            transformedIncoming = transformoperation(
+              remoteOperation,
+              [{ ...localOperation, clientId: clientIdRef.current }],
+              remoteClientId
+            );
+
+            return transformoperation(
+              localOperation,
+              [{ ...remoteOperation, clientId: remoteClientId }],
+              clientIdRef.current
+            );
+          }
+        );
+
         const editor = editorRef.current;
         const currentSelection =
           pendingSelectionRef.current ??
@@ -138,16 +214,17 @@ export function useCollaborativeDocument({
 
         if (currentSelection) {
           pendingSelectionRef.current = {
-            start: transformCursorPosition(currentSelection.start, incomingOperation),
-            end: transformCursorPosition(currentSelection.end, incomingOperation),
+            start: transformCursorPosition(currentSelection.start, transformedIncoming),
+            end: transformCursorPosition(currentSelection.end, transformedIncoming),
             direction: currentSelection.direction
           };
         }
 
-        const nextText = applyOperation(documentTextRef.current, incomingOperation);
+        const nextText = applyOperation(documentTextRef.current, transformedIncoming);
         documentTextRef.current = nextText;
         setDocumentText(nextText);
         updateVersion(message.version);
+        finishAcknowledgedOperation();
       }
     };
 
@@ -166,7 +243,14 @@ export function useCollaborativeDocument({
         wsRef.current = null;
       }
     };
-  }, [meetingId, onParticipantsChange, updateVersion, user]);
+  }, [
+    finishAcknowledgedOperation,
+    meetingId,
+    onParticipantsChange,
+    sendNextOperation,
+    updateVersion,
+    user
+  ]);
 
   useLayoutEffect(() => {
     const pendingSelection = pendingSelectionRef.current;
@@ -184,51 +268,24 @@ export function useCollaborativeDocument({
     pendingSelectionRef.current = null;
   }, [documentText]);
 
-  const sendOperations = useCallback((operations: SyncOperation[]) => {
-    const socket = wsRef.current;
-
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    let baseVersion = versionRef.current;
-
-    for (const op of operations) {
-      socket.send(
-        JSON.stringify({
-          type: "operation",
-          op,
-          baseVersion,
-          clientId: clientIdRef.current
-        })
-      );
-      baseVersion += 1;
-    }
-
-    versionRef.current = baseVersion;
-    setDocumentVersion(baseVersion);
-  }, []);
-
   const handleEditorChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
       const nextText = event.target.value;
-      const beforeInput = beforeInputRef.current;
-      beforeInputRef.current = null;
       const operations = buildOperations(
         documentTextRef.current,
         nextText,
-        beforeInput
+        editRef.current
       );
+      pendingOperationsRef.current.push(...operations);
+      editRef.current = null;
 
       documentTextRef.current = nextText;
       pendingSelectionRef.current = null;
       setDocumentText(nextText);
 
-      if (operations.length > 0) {
-        sendOperations(operations);
-      }
+      sendNextOperation();
     },
-    [sendOperations]
+    [sendNextOperation]
   );
 
   const handleEditorBeforeInput = useCallback(
@@ -236,11 +293,11 @@ export function useCollaborativeDocument({
       const editor = event.currentTarget;
       const inputEvent = event.nativeEvent as InputEvent;
 
-      beforeInputRef.current = [
-        inputEvent.inputType ?? "",
-        editor.selectionStart,
-        editor.selectionEnd
-      ];
+      editRef.current = {
+        type: inputEvent.inputType,
+        start: editor.selectionStart,
+        end: editor.selectionEnd
+      };
     },
     []
   );

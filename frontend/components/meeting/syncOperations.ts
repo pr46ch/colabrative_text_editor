@@ -1,8 +1,14 @@
-import { Participant } from "@/types";
+import type { Participant } from "@/types";
 
 export type SyncOperation =
   | { type: "insert"; position: number; value: string }
   | { type: "delete"; position: number; dell: number };
+
+export type EditorInput = {
+  type: string;
+  start: number;
+  end: number;
+};
 
 type SocketMessage = {
   type?: string;
@@ -10,65 +16,44 @@ type SocketMessage = {
   version?: number;
   participants?: Participant[];
   op?: unknown;
+  clientId?: string;
 };
 
 export function buildOperations(
   previousText: string,
   nextText: string,
-  beforeInput?: readonly [string, number, number] | null
-) {
-  if (beforeInput) {
-    const [inputType, selectionStart, selectionEnd] = beforeInput;
-    const selectedCount = selectionEnd - selectionStart;
-    const lengthChange = nextText.length - previousText.length;
+  input?: EditorInput | null
+): SyncOperation[] {
+  const selected = input ? input.end - input.start : 0;
 
-    if (inputType.startsWith("delete")) {
-      const deletedCount = -lengthChange;
-      const position =
-        selectedCount > 0 || !inputType.endsWith("Backward")
-          ? selectionStart
-          : selectionStart - deletedCount;
+  if (input?.type === "insertText") {
+    const added = nextText.length - previousText.length + selected;
+    const operations: SyncOperation[] = [];
 
-      if (
-        deletedCount >= 0 &&
-        position >= 0 &&
-        (selectedCount === 0 || deletedCount === selectedCount)
-      ) {
-        return deletedCount > 0
-          ? [{ type: "delete" as const, position, dell: deletedCount }]
-          : [];
-      }
+    if (selected) {
+      operations.push({ type: "delete", position: input.start, dell: selected });
     }
-
-    if (
-      inputType.startsWith("insert") &&
-      inputType !== "insertReplacementText" &&
-      inputType !== "insertTranspose"
-    ) {
-      const insertedCount = lengthChange + selectedCount;
-
-      if (insertedCount >= 0) {
-        const operations: SyncOperation[] = [];
-
-        if (selectedCount > 0) {
-          operations.push({
-            type: "delete",
-            position: selectionStart,
-            dell: selectedCount
-          });
-        }
-
-        if (insertedCount > 0) {
-          operations.push({
-            type: "insert",
-            position: selectionStart,
-            value: nextText.slice(selectionStart, selectionStart + insertedCount)
-          });
-        }
-
-        return operations;
-      }
+    if (added) {
+      operations.push({
+        type: "insert",
+        position: input.start,
+        value: nextText.slice(input.start, input.start + added)
+      });
     }
+    return operations;
+  }
+
+  if (
+    input?.type === "deleteContentBackward" ||
+    input?.type === "deleteContentForward"
+  ) {
+    const deleted = previousText.length - nextText.length;
+    const position =
+      selected || input.type === "deleteContentForward"
+        ? input.start
+        : input.start - deleted;
+
+    return deleted ? [{ type: "delete", position, dell: deleted }] : [];
   }
 
   if (previousText === nextText) {
@@ -119,6 +104,7 @@ export function buildOperations(
 
   return operations;
 }
+
 export function applyOperation(text: string, operation: SyncOperation) {
   const position = Math.max(0, Math.min(operation.position, text.length));
 
@@ -197,4 +183,67 @@ export function createClientId() {
   }
 
   return `client-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+export function transformoperation(
+  incomingOperation: SyncOperation,
+  operationArray: Array<SyncOperation & { clientId?: string }>,
+  clientId = ""
+): SyncOperation {
+  const transformed: SyncOperation = { ...incomingOperation };
+
+  for (const reference of operationArray) {
+    if (reference.type === "insert" && transformed.type === "insert") {
+      const referenceWinsTie =
+        String(reference.clientId ?? "").localeCompare(clientId) <= 0;
+
+      if (
+        reference.position < transformed.position ||
+        (reference.position === transformed.position && referenceWinsTie)
+      ) {
+        transformed.position += reference.value.length;
+      }
+      continue;
+    }
+
+    if (reference.type === "insert" && transformed.type === "delete") {
+      if (reference.position <= transformed.position) {
+        transformed.position += reference.value.length;
+      } else if (reference.position < transformed.position + transformed.dell) {
+        transformed.dell += reference.value.length;
+      }
+      continue;
+    }
+
+    if (reference.type === "delete" && transformed.type === "insert") {
+      const referenceEnd = reference.position + reference.dell;
+
+      if (transformed.position >= referenceEnd) {
+        transformed.position -= reference.dell;
+      } else if (transformed.position > reference.position) {
+        transformed.position = reference.position;
+      }
+      continue;
+    }
+
+    if (reference.type === "delete" && transformed.type === "delete") {
+      const referenceEnd = reference.position + reference.dell;
+      const transformedEnd = transformed.position + transformed.dell;
+
+      if (referenceEnd <= transformed.position) {
+        transformed.position -= reference.dell;
+      } else if (reference.position < transformedEnd) {
+        const overlapStart = Math.max(reference.position, transformed.position);
+        const overlapEnd = Math.min(referenceEnd, transformedEnd);
+
+        transformed.dell -= Math.max(0, overlapEnd - overlapStart);
+
+        if (reference.position < transformed.position) {
+          transformed.position = reference.position;
+        }
+      }
+    }
+  }
+
+  return transformed;
 }
