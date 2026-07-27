@@ -91,7 +91,6 @@ export async function getCurrentUserRequest(token: string) {
 
 export async function createMeetingRequest(input: {
   title: string;
-  hostUserId: string;
   inviteUsernames: string[];
 }, token: string) {
   const payload = await request<ApiMeeting>("/meetings", {

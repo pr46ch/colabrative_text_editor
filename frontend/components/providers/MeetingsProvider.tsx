@@ -76,7 +76,6 @@ export function MeetingsProvider({ children }: MeetingsProviderProps) {
 
       const meeting = await createMeetingRequest({
         title: input.title,
-        hostUserId: user.userId,
         inviteUsernames: uniqueInvites
       }, user.token);
 

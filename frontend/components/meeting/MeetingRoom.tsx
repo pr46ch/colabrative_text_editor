@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useMeetings } from "@/components/providers/MeetingsProvider";
-import { MeetingEditorPanel } from "@/components/meeting/MeetingEditorPanel";
 import { MeetingRoomHeader } from "@/components/meeting/MeetingRoomHeader";
 import { MeetingStatusScreen } from "@/components/meeting/MeetingStatusScreen";
 import { ParticipantsSidebar } from "@/components/meeting/ParticipantsSidebar";
@@ -22,10 +21,7 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
   const { meetings } = useMeetings();
   const [copied, setCopied] = useState(false);
 
-  const cachedMeeting = useMemo(
-    () => meetings.find((candidate) => candidate.id === meetingId),
-    [meetings, meetingId]
-  );
+  const cachedMeeting = meetings.find((meeting) => meeting.id === meetingId);
 
   const { meeting, setMeeting, isLoading, loadError } = useMeetingData({
     meetingId,
@@ -65,7 +61,7 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
     return () => window.clearTimeout(timeoutId);
   }, [copied]);
 
-  const handleCopyInvite = useCallback(() => {
+  function handleCopyInvite() {
     const inviteUrl = `${window.location.origin}/meeting/${meetingId}`;
 
     if (navigator.clipboard?.writeText) {
@@ -73,7 +69,7 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
     }
 
     setCopied(true);
-  }, [meetingId]);
+  }
 
   if (!user) {
     return <MeetingStatusScreen message="Redirecting to sign in..." />;
@@ -94,6 +90,11 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
     );
   }
 
+  const statusColor =
+    documentState.socketStatus === "Connected"
+      ? "bg-emerald-500"
+      : "bg-amber-400";
+
   return (
     <main className="min-h-screen bg-slate-50">
       <MeetingRoomHeader
@@ -103,13 +104,28 @@ export function MeetingRoom({ meetingId }: MeetingRoomProps) {
       />
 
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[1fr_20rem] lg:px-8">
-        <MeetingEditorPanel
-          documentText={documentState.documentText}
-          documentVersion={documentState.documentVersion}
-          socketStatus={documentState.socketStatus}
-          editorRef={documentState.editorRef}
-          onDocumentChange={documentState.handleEditorChange}
-        />
+        <section className="min-h-[calc(100vh-10rem)] rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-full min-h-[520px] flex-col rounded-md border border-slate-200 bg-slate-50">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <span className={`h-2 w-2 rounded-full ${statusColor}`} />
+                {documentState.socketStatus}
+              </div>
+              <div className="text-xs font-medium text-slate-400">
+                Version {documentState.documentVersion}
+              </div>
+            </div>
+            <textarea
+              ref={documentState.editorRef}
+              className="min-h-[460px] flex-1 resize-none border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-950 outline-none placeholder:text-slate-400"
+              value={documentState.documentText}
+              onBeforeInput={documentState.handleEditorBeforeInput}
+              onChange={documentState.handleEditorChange}
+              placeholder="Start typing..."
+              spellCheck
+            />
+          </div>
+        </section>
         <ParticipantsSidebar participants={meeting.participants} />
       </div>
     </main>

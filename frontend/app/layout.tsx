@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AppProviders } from "@/components/providers/AppProviders";
+import { AuthProvider } from "@/components/providers/AuthProvider";
+import { MeetingsProvider } from "@/components/providers/MeetingsProvider";
 
 export const metadata: Metadata = {
   title: "SyncPad | Collaborative Text Editor",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppProviders>{children}</AppProviders>
+        <AuthProvider>
+          <MeetingsProvider>{children}</MeetingsProvider>
+        </AuthProvider>
       </body>
     </html>
   );

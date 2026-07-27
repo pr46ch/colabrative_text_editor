@@ -2,6 +2,7 @@
 
 import {
   ChangeEvent,
+  FormEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -42,6 +43,7 @@ export function useCollaborativeDocument({
   const clientIdRef = useRef(createClientId());
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const documentTextRef = useRef("");
+  const beforeInputRef = useRef<readonly [string, number, number] | null>(null);
   const pendingSelectionRef = useRef<{
     start: number;
     end: number;
@@ -210,7 +212,13 @@ export function useCollaborativeDocument({
   const handleEditorChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
       const nextText = event.target.value;
-      const operations = buildOperations(documentTextRef.current, nextText);
+      const beforeInput = beforeInputRef.current;
+      beforeInputRef.current = null;
+      const operations = buildOperations(
+        documentTextRef.current,
+        nextText,
+        beforeInput
+      );
 
       documentTextRef.current = nextText;
       pendingSelectionRef.current = null;
@@ -223,11 +231,26 @@ export function useCollaborativeDocument({
     [sendOperations]
   );
 
+  const handleEditorBeforeInput = useCallback(
+    (event: FormEvent<HTMLTextAreaElement>) => {
+      const editor = event.currentTarget;
+      const inputEvent = event.nativeEvent as InputEvent;
+
+      beforeInputRef.current = [
+        inputEvent.inputType ?? "",
+        editor.selectionStart,
+        editor.selectionEnd
+      ];
+    },
+    []
+  );
+
   return {
     documentText,
     documentVersion,
     socketStatus,
     editorRef,
+    handleEditorBeforeInput,
     handleEditorChange
   };
 }
